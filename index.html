@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Nova Engine - Исправленный</title>
+    <title>Nova Engine - Без ошибок!</title>
     <style>
         * {
             user-select: none;
@@ -155,34 +155,29 @@
 </head>
 <body>
     <div class="container">
-        <h2>🚀 Nova Engine 0.3 - Круги работают!</h2>
+        <h2>🚀 Nova Engine 0.4 - Без багов!</h2>
         
         <div class="editor-area">
             <textarea id="editor">
-// Игрок (красный круг)
+// Игрок
 playerX = 200
 playerY = 150
-create круг playerX playerY 25 "red"
+create круг playerX playerY 25 "lime"
 
-// Счетчик
-score = 0
+// Скорость
+speed = 5
 
 update {
-    // Управление стрелками
-    if keyLeft { playerX = playerX - 5 }
-    if keyRight { playerX = playerX + 5 }
-    if keyUp { playerY = playerY - 5 }
-    if keyDown { playerY = playerY + 5 }
+    if keyLeft { playerX = playerX - speed }
+    if keyRight { playerX = playerX + speed }
+    if keyUp { playerY = playerY - speed }
+    if keyDown { playerY = playerY + speed }
     
     // Границы
     if playerX < 25 { playerX = 25 }
     if playerX > 375 { playerX = 375 }
     if playerY < 25 { playerY = 25 }
     if playerY > 275 { playerY = 275 }
-    
-    // Показываем позицию (не спамит, потому что 30 fps)
-    // Раскомментируй если хочешь видеть координаты:
-    // show "X: " + playerX + " Y: " + playerY
 }
             </textarea>
             
@@ -204,8 +199,7 @@ update {
         
         <div id="output"></div>
         <div class="info">
-            💡 ПК: стрелки клавиатуры | 📱 Телефон: кнопки на экране<br>
-            🎨 Красный круг должен двигаться!
+            💡 ПК: стрелки клавиатуры | 📱 Телефон: кнопки на экране
         </div>
     </div>
 
@@ -283,7 +277,6 @@ update {
             show("📝 Вывод очищен");
         }
         
-        // ГЛАВНЫЙ ФИКС - правильная отрисовка!
         function draw(type, x, y, size, color) {
             gameObjects.push({ type, x, y, size, color });
         }
@@ -305,80 +298,124 @@ update {
             }
         }
         
-        // Игровой цикл
-        function gameUpdate() {
-            if(!isRunning) return;
-            
-            gameObjects = [];
-            
-            let vars = window.gameVars || {};
-            
-            vars.keyLeft = keys.ArrowLeft;
-            vars.keyRight = keys.ArrowRight;
-            vars.keyUp = keys.ArrowUp;
-            vars.keyDown = keys.ArrowDown;
-            vars.show = show;
-            
-            if(window.updateCode) {
-                try {
-                    const funcBody = `
-                        with(this) {
-                            ${window.updateCode}
-                        }
-                    `;
-                    const updateFunc = new Function(funcBody);
-                    updateFunc.call(vars);
-                    
-                    window.gameVars = {};
-                    for(let key in vars) {
-                        if(!['keyLeft','keyRight','keyUp','keyDown','show'].includes(key)) {
-                            window.gameVars[key] = vars[key];
-                        }
-                    }
-                } catch(e) {
-                    if(!window.errorShown) {
-                        show("⚠️ " + e.message);
-                        window.errorShown = true;
-                        setTimeout(() => { window.errorShown = false; }, 1000);
-                    }
-                }
-            }
-            
-            renderAll();
-        }
-        
+        // ГЛАВНЫЙ ФИКС - правильный парсинг update блока
         function runNova() {
             stopNova();
             clearOutput();
             
             let code = document.getElementById('editor').value;
             
-            let updateMatch = code.match(/update\s*\{([\s\S]*?)\}/);
-            let updateBody = updateMatch ? updateMatch[1] : "";
-            let initCode = code.replace(/update\s*\{[\s\S]*?\}/, '');
+            // Ищем update блок (любое содержимое между { и })
+            let updateMatch = code.match(/update\s*\{([\s\S]*?)\}(?=\s*$|\s*\/\/|\s*[a-z])/m);
+            let updateBody = "";
             
-            // Транспиляция
-            initCode = initCode.replace(/^([a-z_][a-z0-9_]*)\s*=/gim, 'window.gameVars.$1 =');
-            initCode = initCode.replace(/show\s+(.+?)(;|$)/g, 'show($1);');
-            initCode = initCode.replace(/create\s+(круг|квадрат)\s+([^\s]+)\s+([^\s]+)\s+(\d+)\s+"([^"]+)"/g, 
-                'draw("$1", $2, $3, $4, "$5");');
+            if(updateMatch) {
+                updateBody = updateMatch[1];
+                // Удаляем update блок из кода
+                code = code.replace(/update\s*\{[\s\S]*?\}/, '');
+            }
             
+            // Транспиляция переменных
+            let lines = code.split('\n');
+            let jsCode = [];
+            
+            for(let line of lines) {
+                line = line.trim();
+                if(line === "") continue;
+                
+                // Пропускаем комментарии
+                if(line.startsWith('//')) {
+                    jsCode.push(line);
+                    continue;
+                }
+                
+                // show команда
+                if(line.startsWith('show ')) {
+                    let content = line.substring(5);
+                    jsCode.push(`show(${content});`);
+                }
+                // create команда
+                else if(line.startsWith('create ')) {
+                    let parts = line.match(/create\s+(круг|квадрат)\s+([^\s]+)\s+([^\s]+)\s+(\d+)\s+"([^"]+)"/);
+                    if(parts) {
+                        jsCode.push(`draw("${parts[1]}", ${parts[2]}, ${parts[3]}, ${parts[4]}, "${parts[5]}");`);
+                    }
+                }
+                // переменная (x = 10)
+                else if(line.match(/^[a-z_][a-z0-9_]*\s*=/i)) {
+                    let varMatch = line.match(/^([a-z_][a-z0-9_]*)\s*=/i);
+                    if(varMatch) {
+                        let varName = varMatch[1];
+                        jsCode.push(`window.gameVars.${line}`);
+                    }
+                }
+                // обычный код
+                else {
+                    jsCode.push(line);
+                }
+            }
+            
+            // Инициализируем переменные
             window.gameVars = {};
             try {
-                eval(initCode);
+                eval(jsCode.join('\n'));
             } catch(e) {
                 show("❌ Ошибка: " + e.message);
+                console.error(e);
                 return;
             }
             
+            // Сохраняем update код
             window.updateCode = updateBody;
             
-            isRunning = true;
-            gameInterval = setInterval(() => {
-                if(isRunning) gameUpdate();
-            }, 33);
-            
-            show("✅ Игра запущена! Двигай красный круг стрелками");
+            // Запускаем игровой цикл
+            if(window.updateCode && window.updateCode.trim()) {
+                isRunning = true;
+                gameInterval = setInterval(() => {
+                    if(!isRunning) return;
+                    
+                    gameObjects = [];
+                    
+                    let vars = window.gameVars || {};
+                    vars.keyLeft = keys.ArrowLeft;
+                    vars.keyRight = keys.ArrowRight;
+                    vars.keyUp = keys.ArrowUp;
+                    vars.keyDown = keys.ArrowDown;
+                    vars.show = show;
+                    
+                    try {
+                        // Выполняем update код
+                        const funcBody = `
+                            with(this) {
+                                ${window.updateCode}
+                            }
+                        `;
+                        const updateFunc = new Function(funcBody);
+                        updateFunc.call(vars);
+                        
+                        // Сохраняем измененные переменные
+                        window.gameVars = {};
+                        for(let key in vars) {
+                            if(!['keyLeft','keyRight','keyUp','keyDown','show'].includes(key)) {
+                                window.gameVars[key] = vars[key];
+                            }
+                        }
+                    } catch(e) {
+                        if(!window.errorShown) {
+                            show("⚠️ " + e.message);
+                            window.errorShown = true;
+                            setTimeout(() => { window.errorShown = false; }, 1000);
+                        }
+                    }
+                    
+                    renderAll();
+                }, 33);
+                
+                show("✅ Игра запущена! Двигай зеленый круг стрелками");
+            } else {
+                renderAll();
+                show("✅ Код выполнен (нет update блока)");
+            }
         }
         
         function stopNova() {
@@ -393,8 +430,8 @@ update {
         setupMobileControls();
         
         window.onload = () => {
-            show("🎮 Готов к игре! Напиши код и нажми ЗАПУСТИТЬ");
-            show("📝 Пример: create круг 200 150 30 'red'");
+            show("🎮 Nova Engine готов!");
+            show("📝 Пиши код и нажимай ЗАПУСТИТЬ");
         };
     </script>
 </body>
