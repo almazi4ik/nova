@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Nova Engine - Исправленный</title>
+    <style>
+        * {
+            user-select: none;
+            touch-action: manipulation;
+        }
+        
+        body {
+            background: #121212;
+            color: #fff;
+            font-family: monospace;
+            margin: 0;
+            padding: 10px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        
+        @media (min-width: 768px) {
+            .editor-area {
+                display: flex;
+                gap: 20px;
+                margin-bottom: 20px;
+            }
+            
+            textarea {
+                width: 60%;
+                height: 400px;
+                font-size: 14px;
+            }
+            
+            .controls {
+                width: 35%;
+            }
+            
+            canvas {
+                width: 600px;
+                height: 450px;
+            }
+            
+            button {
+                font-size: 16px;
+                padding: 12px 24px;
+            }
+        }
+        
+        @media (max-width: 767px) {
+            textarea {
+                width: 100%;
+                height: 200px;
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+            
+            canvas {
+                width: 100%;
+                height: auto;
+                max-width: 400px;
+                aspect-ratio: 4/3;
+            }
+            
+            button {
+                font-size: 18px;
+                padding: 15px 30px;
+                width: 100%;
+            }
+            
+            .mobile-buttons {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+                margin-top: 15px;
+            }
+            
+            .ctrl-btn {
+                background: #333;
+                color: white;
+                font-size: 24px;
+                padding: 15px;
+                text-align: center;
+                border-radius: 10px;
+                cursor: pointer;
+                border: 2px solid #ff4500;
+            }
+            
+            .ctrl-btn:active {
+                background: #ff4500;
+                transform: scale(0.95);
+            }
+        }
+        
+        textarea {
+            background: #222;
+            color: #7cfc00;
+            border: 2px solid #ff4500;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+            border-radius: 10px;
+        }
+        
+        canvas {
+            background: #000;
+            border: 3px solid #ff4500;
+            border-radius: 10px;
+            display: block;
+            margin: 10px auto;
+        }
+        
+        button {
+            background: #ff4500;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.1s;
+            margin: 5px;
+        }
+        
+        button:active {
+            transform: scale(0.95);
+        }
+        
+        #output {
+            background: #1e1e1e;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 10px;
+            color: #0f0;
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        
+        .info {
+            color: #888;
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🚀 Nova Engine 0.3 - Круги работают!</h2>
+        
+        <div class="editor-area">
+            <textarea id="editor">
+// Игрок (красный круг)
+playerX = 200
+playerY = 150
+create круг playerX playerY 25 "red"
+
+// Счетчик
+score = 0
+
+update {
+    // Управление стрелками
+    if keyLeft { playerX = playerX - 5 }
+    if keyRight { playerX = playerX + 5 }
+    if keyUp { playerY = playerY - 5 }
+    if keyDown { playerY = playerY + 5 }
+    
+    // Границы
+    if playerX < 25 { playerX = 25 }
+    if playerX > 375 { playerX = 375 }
+    if playerY < 25 { playerY = 25 }
+    if playerY > 275 { playerY = 275 }
+    
+    // Показываем позицию (не спамит, потому что 30 fps)
+    // Раскомментируй если хочешь видеть координаты:
+    // show "X: " + playerX + " Y: " + playerY
+}
+            </textarea>
+            
+            <div class="controls">
+                <button onclick="runNova()">🎮 ЗАПУСТИТЬ</button>
+                <button onclick="stopNova()" style="background:#666;">⏹️ СТОП</button>
+                <button onclick="clearOutput()" style="background:#444;">🗑️ ОЧИСТИТЬ</button>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas" width="400" height="300"></canvas>
+        
+        <div class="mobile-buttons" id="mobileControls" style="display:none;">
+            <div class="ctrl-btn" data-key="ArrowLeft">◀ ЛЕВО</div>
+            <div class="ctrl-btn" data-key="ArrowUp">▲ ВВЕРХ</div>
+            <div class="ctrl-btn" data-key="ArrowDown">▼ ВНИЗ</div>
+            <div class="ctrl-btn" data-key="ArrowRight">▶ ПРАВО</div>
+        </div>
+        
+        <div id="output"></div>
+        <div class="info">
+            💡 ПК: стрелки клавиатуры | 📱 Телефон: кнопки на экране<br>
+            🎨 Красный круг должен двигаться!
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameObjects = [];
+        let gameInterval = null;
+        let isRunning = false;
+        
+        // Клавиши
+        const keys = {
+            ArrowLeft: false, ArrowRight: false,
+            ArrowUp: false, ArrowDown: false
+        };
+        
+        // Управление с клавиатуры
+        document.addEventListener('keydown', (e) => {
+            if(keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if(keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+                e.preventDefault();
+            }
+        });
+        
+        // Мобильные кнопки
+        function setupMobileControls() {
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            const mobileDiv = document.getElementById('mobileControls');
+            
+            if(isMobile) {
+                mobileDiv.style.display = 'grid';
+                
+                document.querySelectorAll('.ctrl-btn').forEach(btn => {
+                    const key = btn.getAttribute('data-key');
+                    
+                    btn.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        keys[key] = true;
+                    });
+                    
+                    btn.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        keys[key] = false;
+                    });
+                    
+                    btn.addEventListener('mousedown', () => keys[key] = true);
+                    btn.addEventListener('mouseup', () => keys[key] = false);
+                });
+            }
+        }
+        
+        // Функции Nova
+        function show(msg) {
+            const output = document.getElementById('output');
+            const p = document.createElement('div');
+            p.textContent = msg;
+            output.appendChild(p);
+            output.scrollTop = output.scrollHeight;
+            
+            if(output.children.length > 20) {
+                output.removeChild(output.children[0]);
+            }
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+            show("📝 Вывод очищен");
+        }
+        
+        // ГЛАВНЫЙ ФИКС - правильная отрисовка!
+        function draw(type, x, y, size, color) {
+            gameObjects.push({ type, x, y, size, color });
+        }
+        
+        function renderAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for(let obj of gameObjects) {
+                ctx.fillStyle = obj.color;
+                
+                if(obj.type === "круг") {
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y, obj.size, 0, Math.PI * 2);
+                    ctx.fill();
+                } 
+                else if(obj.type === "квадрат") {
+                    ctx.fillRect(obj.x - obj.size/2, obj.y - obj.size/2, obj.size, obj.size);
+                }
+            }
+        }
+        
+        // Игровой цикл
+        function gameUpdate() {
+            if(!isRunning) return;
+            
+            gameObjects = [];
+            
+            let vars = window.gameVars || {};
+            
+            vars.keyLeft = keys.ArrowLeft;
+            vars.keyRight = keys.ArrowRight;
+            vars.keyUp = keys.ArrowUp;
+            vars.keyDown = keys.ArrowDown;
+            vars.show = show;
+            
+            if(window.updateCode) {
+                try {
+                    const funcBody = `
+                        with(this) {
+                            ${window.updateCode}
+                        }
+                    `;
+                    const updateFunc = new Function(funcBody);
+                    updateFunc.call(vars);
+                    
+                    window.gameVars = {};
+                    for(let key in vars) {
+                        if(!['keyLeft','keyRight','keyUp','keyDown','show'].includes(key)) {
+                            window.gameVars[key] = vars[key];
+                        }
+                    }
+                } catch(e) {
+                    if(!window.errorShown) {
+                        show("⚠️ " + e.message);
+                        window.errorShown = true;
+                        setTimeout(() => { window.errorShown = false; }, 1000);
+                    }
+                }
+            }
+            
+            renderAll();
+        }
+        
+        function runNova() {
+            stopNova();
+            clearOutput();
+            
+            let code = document.getElementById('editor').value;
+            
+            let updateMatch = code.match(/update\s*\{([\s\S]*?)\}/);
+            let updateBody = updateMatch ? updateMatch[1] : "";
+            let initCode = code.replace(/update\s*\{[\s\S]*?\}/, '');
+            
+            // Транспиляция
+            initCode = initCode.replace(/^([a-z_][a-z0-9_]*)\s*=/gim, 'window.gameVars.$1 =');
+            initCode = initCode.replace(/show\s+(.+?)(;|$)/g, 'show($1);');
+            initCode = initCode.replace(/create\s+(круг|квадрат)\s+([^\s]+)\s+([^\s]+)\s+(\d+)\s+"([^"]+)"/g, 
+                'draw("$1", $2, $3, $4, "$5");');
+            
+            window.gameVars = {};
+            try {
+                eval(initCode);
+            } catch(e) {
+                show("❌ Ошибка: " + e.message);
+                return;
+            }
+            
+            window.updateCode = updateBody;
+            
+            isRunning = true;
+            gameInterval = setInterval(() => {
+                if(isRunning) gameUpdate();
+            }, 33);
+            
+            show("✅ Игра запущена! Двигай красный круг стрелками");
+        }
+        
+        function stopNova() {
+            isRunning = false;
+            if(gameInterval) {
+                clearInterval(gameInterval);
+                gameInterval = null;
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        setupMobileControls();
+        
+        window.onload = () => {
+            show("🎮 Готов к игре! Напиши код и нажми ЗАПУСТИТЬ");
+            show("📝 Пример: create круг 200 150 30 'red'");
+        };
+    </script>
+</body>
+</html>
